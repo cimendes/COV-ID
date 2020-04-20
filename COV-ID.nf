@@ -1158,7 +1158,7 @@ splitCh_1_10.flatMap().map{ it -> [it.toString().tokenize('/').last().tokenize('
 
 
 // Check for the presence of absence of fasta reference
-if (params.typingReference == null) {
+if (params.reference == null) {
     exit 1, "Dengue_typing: A reference fasta file must be provided."
 }
 
@@ -1166,7 +1166,7 @@ getRef_1_11 = params.getGenome ? "true" : "false"
 checkpointReferenceGenome_1_11 = Channel.value(getRef_1_11)
 checkpointReferenceGenome_1_11.into{ reference_reads_1_11 ; reference_assembly_1_11 }
 
-reference_1_11 = Channel.fromPath(params.typingReference)
+reference_1_11 = Channel.fromPath(params.reference)
 
 class VerifyCompletnessTyping {
 
@@ -1199,12 +1199,12 @@ class VerifyCompletnessTyping {
 }
 
 
-type_reads_1_11 = Channel.create()
-type_assembly_1_11 = Channel.create()
+to_align_1_11 = Channel.create()
+to_consensus_1_11 = Channel.create()
 //TODO update value
 split_assembly_out_1_9.choice(to_align_1_11, to_consensus_1_11){a -> a[1].toString() == "null" ? false : VerifyCompletnessTyping.contigs(a[1].toString(), 10000) == true ? 0 : 1}
 
-process dengue_typing_reads_1_11 {
+process rematch_1_11 {
 
 // Send POST request to platform
         if ( params.platformHTTP != null ) {
@@ -1217,16 +1217,14 @@ process dengue_typing_reads_1_11 {
     tag { sample_id }
 
     publishDir "results/consensus/${sample_id}/"
-
     errorStrategy { task.exitStatus == 120 ? 'ignore' : 'retry' }
 
     input:
-    set sample_id, file(assembly), file(fastq_pair) from to_consensus.join(_LAST_fastq_1_11)
+    set sample_id, file(assembly), file(fastq_pair) from to_consensus_1_11.join(_LAST_fastq_1_11)
     val get_reference from reference_reads_1_11
-    each file(reference) from Channel.fromPath("${params.typingReference}")
+    each file(reference) from Channel.fromPath(params.reference)
 
     output:
-    file "seq_typing*"
     set sample_id, file("*consensus.fasta") into out_typing_reads_1_11
     file("*.fa") optional true into _ref_seqTyping_reads_1_11
     set sample_id, val("1_11_dengue_typing_reads"), file(".status"), file(".warning"), file(".fail"), file(".command.log") into STATUS_dengue_typing_reads_1_11
@@ -1234,12 +1232,19 @@ set sample_id, val("dengue_typing_reads_1_11"), val("1_11"), file(".report.json"
 file ".versions"
 
     script:
-    template "dengue_typing_reads.py"
+    """
+    mkdir workdir
+    mkdir workdir/${sample_id}
+    cp ${fastq_pair} workdir/${sample_id}
+
+    rematch.py -r ${reference} --workdir workdir/
+    """
 
 }
 
-out_typing_assembly_1_11.mix(out_typing_reads_1_11).set{ dengue_typing_out_1_10 }
+to_align_1_11.mix(out_typing_reads_1_11).set{ dengue_typing_out_1_10 }
 
+_ref_seqTyping_assembly_1_11 = Channel.create()
 _ref_seqTyping_assembly_1_11.mix(_ref_seqTyping_reads_1_11).set{ _ref_seqTyping_1_11 }
 
 
@@ -1257,8 +1262,6 @@ if ( has_ref_1_12 ){
 
 //dengue_typing_out_1_10.map{ it[1] }.mix(_ref_seqTyping_1_12.unique()).set{mafft_input}
 
-IN_reference_param Channel.fromPath(params.reference_mafft)
-
 process mafft_1_12 {
 
         if ( params.platformHTTP != null ) {
@@ -1274,7 +1277,7 @@ process mafft_1_12 {
 
     input:
     file(assembly) from mafft_input.collect()
-    file(reference) from IN_reference_param
+    file(reference) from Channel.fromPath(params.reference)
 
     output:
     file ("*.align") into mafft_out_1_11
@@ -1383,7 +1386,7 @@ process status {
     publishDir "pipeline_status/$task_name"
 
     input:
-    set sample_id, task_name, status, warning, fail, file(log) from STATUS_integrity_coverage_1_1.mix(STATUS_fastqc_1_2,STATUS_fastqc_report_1_2,STATUS_trimmomatic_1_2,STATUS_filter_poly_1_3,STATUS_bowtie_1_4,STATUS_report_bowtie_1_4,STATUS_retrieve_mapped_1_5,STATUS_renamePE_1_5,STATUS_check_coverage_1_6,STATUS_va_spades_1_7,STATUS_va_megahit_1_7,STATUS_report_viral_assembly_1_7,STATUS_assembly_mapping_1_8,STATUS_process_am_1_8,STATUS_pilon_1_9,STATUS_pilon_report_1_9,STATUS_split_assembly_1_10,STATUS_dengue_typing_assembly_1_11,STATUS_dengue_typing_reads_1_11,STATUS_mafft_1_12,STATUS_raxml_1_13,STATUS_report_raxml_1_13)
+    set sample_id, task_name, status, warning, fail, file(log) from STATUS_integrity_coverage_1_1.mix(STATUS_fastqc_1_2,STATUS_fastqc_report_1_2,STATUS_trimmomatic_1_2,STATUS_filter_poly_1_3,STATUS_bowtie_1_4,STATUS_report_bowtie_1_4,STATUS_retrieve_mapped_1_5,STATUS_renamePE_1_5,STATUS_check_coverage_1_6,STATUS_va_spades_1_7,STATUS_va_megahit_1_7,STATUS_report_viral_assembly_1_7,STATUS_assembly_mapping_1_8,STATUS_process_am_1_8,STATUS_pilon_1_9,STATUS_pilon_report_1_9,STATUS_split_assembly_1_10,STATUS_dengue_typing_reads_1_11,STATUS_mafft_1_12,STATUS_raxml_1_13,STATUS_report_raxml_1_13)
 
     output:
     file '*.status' into master_status
@@ -1452,7 +1455,7 @@ process report {
             pid,
             report_json,
             version_json,
-            trace from REPORT_integrity_coverage_1_1.mix(REPORT_fastqc_1_2,REPORT_fastqc_report_1_2,REPORT_trimmomatic_1_2,REPORT_filter_poly_1_3,REPORT_bowtie_1_4,REPORT_report_bowtie_1_4,REPORT_retrieve_mapped_1_5,REPORT_renamePE_1_5,REPORT_check_coverage_1_6,REPORT_va_spades_1_7,REPORT_va_megahit_1_7,REPORT_report_viral_assembly_1_7,REPORT_assembly_mapping_1_8,REPORT_process_am_1_8,REPORT_pilon_1_9,REPORT_pilon_report_1_9,REPORT_split_assembly_1_10,REPORT_dengue_typing_assembly_1_11,REPORT_dengue_typing_reads_1_11,REPORT_mafft_1_12,REPORT_raxml_1_13,REPORT_report_raxml_1_13)
+            trace from REPORT_integrity_coverage_1_1.mix(REPORT_fastqc_1_2,REPORT_fastqc_report_1_2,REPORT_trimmomatic_1_2,REPORT_filter_poly_1_3,REPORT_bowtie_1_4,REPORT_report_bowtie_1_4,REPORT_retrieve_mapped_1_5,REPORT_renamePE_1_5,REPORT_check_coverage_1_6,REPORT_va_spades_1_7,REPORT_va_megahit_1_7,REPORT_report_viral_assembly_1_7,REPORT_assembly_mapping_1_8,REPORT_process_am_1_8,REPORT_pilon_1_9,REPORT_pilon_report_1_9,REPORT_split_assembly_1_10,REPORT_dengue_typing_reads_1_11,REPORT_mafft_1_12,REPORT_raxml_1_13,REPORT_report_raxml_1_13)
 
     output:
     file "*" optional true into master_report
