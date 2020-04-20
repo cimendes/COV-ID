@@ -1,3 +1,5 @@
 .nextflow*
 pipeline_stats.txt*
 fastq/
+work/
+results/
