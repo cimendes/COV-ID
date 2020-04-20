@@ -3,3 +3,4 @@ pipeline_stats.txt*
 fastq/
 work/
 results/
+bowtie_index/
